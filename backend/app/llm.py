@@ -210,6 +210,10 @@ async def _complete_with_fallbacks(litellm, kwargs, model, settings, json_mode, 
         attempts = 1 + (retries if (is_primary and not breaker_open) else min(retries, 1))
         if breaker_open and is_primary:
             attempts = 1
+        if remaining_budget() is not None:
+            # Under an answer budget, switch model on a transient error instead of
+            # retrying the same one; a last remaining model keeps one retry.
+            attempts = 1 if idx + 1 < len(candidates) else min(attempts, 2)
         for attempt in range(attempts):
             left = remaining_budget()
             if left is not None and left < _MIN_CALL_SECONDS:
@@ -218,7 +222,10 @@ async def _complete_with_fallbacks(litellm, kwargs, model, settings, json_mode, 
                 raise AnswerBudgetExceeded("answer time budget used up; skipping the LLM step")
             call_kwargs = {**kwargs, "model": candidate}
             if left is not None:
-                call_kwargs["timeout"] = max(1.0, min(float(settings.llm_timeout_seconds), left - 1.0))
+                cap = left - 1.0
+                if attempt + 1 < attempts or idx + 1 < len(candidates):
+                    cap = max(_MIN_CALL_SECONDS, left / 2)  # leave time for the next model
+                call_kwargs["timeout"] = max(1.0, min(float(settings.llm_timeout_seconds), cap))
             wait_cap = float(call_kwargs["timeout"]) + 2.0
             if left is not None:
                 wait_cap = min(wait_cap, max(1.0, left - 0.5))

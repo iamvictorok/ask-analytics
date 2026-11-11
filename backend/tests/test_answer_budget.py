@@ -158,8 +158,8 @@ def test_max_seconds_caps_one_step_and_restores_budget(monkeypatch):
         return left
 
     left = asyncio.run(go())
-    assert seen[0] <= 19.5          # capped by max_seconds
-    assert seen[1] > 30             # the rest of the 45 s budget is back
+    assert seen[0] <= 10.5          # capped by max_seconds (half kept for the fallback)
+    assert seen[1] > 20             # the rest of the 45 s budget is back
     assert left > 40
 
 
@@ -174,3 +174,24 @@ def test_max_seconds_ignored_without_budget(monkeypatch):
     monkeypatch.setattr(litellm, "acompletion", fake)
     asyncio.run(llm.complete([{"role": "user", "content": "x"}], _settings(), max_seconds=5))
     assert seen == [40]
+
+
+def test_budget_switches_model_instead_of_retrying(monkeypatch):
+    import litellm
+    calls = []
+
+    async def fake(**kwargs):
+        calls.append((kwargs["model"], kwargs["timeout"]))
+        if kwargs["model"] == "gemini/gemini-flash-latest":
+            raise RuntimeError("503 UNAVAILABLE high demand")
+        return _resp("lite")
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+
+    async def go():
+        llm.set_deadline(20.0)
+        return await llm.complete([{"role": "user", "content": "x"}], _settings(llm_transient_retries=2))
+
+    assert asyncio.run(go()) == "lite"
+    assert [m for m, _ in calls] == ["gemini/gemini-flash-latest", "gemini/gemini-flash-lite-latest"]
+    assert calls[0][1] <= 10.5      # first model leaves time for the fallback
