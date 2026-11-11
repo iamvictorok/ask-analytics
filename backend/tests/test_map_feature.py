@@ -378,3 +378,13 @@ def test_no_spurious_map_note_on_plain_breakdown(monkeypatch):
     assert not called
     assert "coming soon" not in body and "couldn't draw a map" not in body
     assert "event: map_config" not in body
+
+
+def test_chat_request_accepts_map_output_mode():
+    """The DHIS2 app's Output selector offers "Map"; the API must accept it (was 422)."""
+    from backend.app.models import ChatRequest
+    from backend.app.agent.intent import classify_intent
+
+    req = ChatRequest(message="ANC 1 coverage by district last year", output_mode="map")
+    assert req.output_mode == "map"
+    assert classify_intent(req.message, forced_mode="map")["output_mode"] == "map"

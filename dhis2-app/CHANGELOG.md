@@ -7,6 +7,9 @@ Tested end to end through a real DHIS2 Route (play.im.dhis2.org, 2.41.11).
 - Backend: per-answer time budget in route mode (default 45 s), so answers finish inside
   the 60 s Route timeout even when the AI provider is slow; falls back to a figures-only
   answer instead of a 504.
+- App: fixed the first question of a new conversation never being sent (its request
+  was cancelled when the conversation was created).
+- Backend: accepts the "Map" output mode the app offers (it returned HTTP 422).
 - App: the waiting message says answers can take up to a minute (DHIS2 Routes deliver the
   answer in one piece, not streamed).
 

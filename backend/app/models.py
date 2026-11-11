@@ -3,7 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-OutputMode = Literal["conversational", "dashboard", "report", "presentation", "export"]
+OutputMode = Literal["conversational", "dashboard", "report", "presentation", "export", "map"]
 RetrievalStrategy = Literal["analytics_api", "direct_sql", "both"]
 
 

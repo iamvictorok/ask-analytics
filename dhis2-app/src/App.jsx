@@ -160,14 +160,12 @@ const MyApp = () => {
             const outputMode = modeOverride ?? mode
             setLoading(true)
             setNotice(null)
-            abortRef.current?.abort()
-            const controller = new AbortController()
-            abortRef.current = controller
-            artefacts.current = emptyArtefacts()
 
             let convId = activeId
             try {
                 if (!convId) {
+                    // newConversation() aborts any in-flight request, so the
+                    // controller for this question is created after it.
                     convId = await newConversation()
                 }
             } catch (err) {
@@ -175,6 +173,10 @@ const MyApp = () => {
                 setLoading(false)
                 return
             }
+            abortRef.current?.abort()
+            const controller = new AbortController()
+            abortRef.current = controller
+            artefacts.current = emptyArtefacts()
             const isFirst = messages.length === 0
             setMessages((prev) => [
                 ...prev,

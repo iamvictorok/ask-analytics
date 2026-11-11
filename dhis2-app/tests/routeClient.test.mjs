@@ -50,3 +50,14 @@ test('SSE parser flushes a buffered body', () => {
     )
     assert.deepEqual(events, ['token', 'done'])
 })
+
+test('first question in a new conversation is not aborted (regression)', async () => {
+    // newConversation() aborts the in-flight request; send() must create its
+    // AbortController only after awaiting it, or the first question is never sent.
+    const { readFile } = await import('node:fs/promises')
+    const src = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+    const send = src.slice(src.indexOf('const send = useCallback'))
+    const awaitNew = send.indexOf('await newConversation()')
+    const newCtrl = send.indexOf('new AbortController()')
+    assert.ok(awaitNew > 0 && newCtrl > awaitNew)
+})
