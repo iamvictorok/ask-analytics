@@ -33,8 +33,12 @@ browser. The only setting the app stores is the Route **code** (not secret).
 - **DHIS2 2.40 or later** (Routes API). Recommended: **2.40.10+, 2.41.6+, 2.42+**, where a
   Route's response timeout can be raised to 60 seconds. Earlier patch releases have a fixed
   10 s (or 30 s) timeout, which long answers (reports) can exceed.
-- Tested: the app UI against the 2.41.11 play database (with the Route behaviour emulated
-  locally, see "Known gaps"); unit tests for the backend's route auth.
+- Tested end to end (11 Nov 2026, version 0.1.1): app installed on the public 2.41.11 play
+  server, real Route (`api-headers` auth, `X-Route-Key`, 60 s timeout, authority
+  `ASK_ANALYTICS_RUN_ROUTE`) to the backend on Render's free plan with Gemini. Trend charts,
+  district comparison, district map, data export (XLSX download) and a programme report
+  (PDF download) all answered through the Route in 2 to 46 s. A user without the authority
+  gets 403 from DHIS2; a request without the key gets 401 from the backend.
 
 ## 2. Run the backend (Docker)
 
@@ -194,11 +198,15 @@ map tiles.
 
 ## 8. Known gaps
 
-- Not yet tested end to end against a real DHIS2 Route proxy. Streaming may be buffered by
-  DHIS2 (the app then shows the full answer when it finishes), and answers longer than the
-  Route timeout (max 60 s) fail with a 504. Screenshots were taken with the Route contract
-  emulated locally (same headers) against the public 2.41.11 demo database.
+- DHIS2 Routes buffer the response: the answer appears in one piece when it is complete
+  (no word-by-word streaming). The app says answers can take up to a minute.
+- Answers must finish inside the Route timeout (max 60 s). The backend keeps a 45 s budget
+  for AI model calls (`ANSWER_TIME_BUDGET_SECONDS`); when the model is slow or overloaded
+  it answers with the figures only rather than timing out.
+- A backend that sleeps when idle (e.g. a free hosting plan) can take 30 to 60 s to wake;
+  the first request after that may hit the Route timeout. Keep the backend always on in
+  real use.
 - Per-user DHIS2 permissions are not applied (single server-side token).
-- The in-app report is read-only (the standalone UI has an editor).
+- The in-app report is read-only.
 - UI strings are English only (no i18n yet).
-- The Plotly chart library is ~1.5 MB gzipped; it loads only when the first chart appears.
+- The Plotly chart library is large (~1.5 MB gzipped); it loads only when the first chart appears.
