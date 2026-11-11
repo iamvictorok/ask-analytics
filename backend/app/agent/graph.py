@@ -169,8 +169,10 @@ async def run_agent_stream(
         },
     )
     pipeline_start = time.monotonic()
-    from backend.app.llm import begin_call_log
+    from backend.app.llm import begin_call_log, set_deadline
     _llm_calls = begin_call_log()
+    # Route mode: finish inside the DHIS2 Route timeout (see answer_time_budget_seconds).
+    set_deadline(settings.effective_answer_budget)
     _nodes = _NODE_TIMES.begin()
     from backend.app.dhis2 import failover
     source_tracker = failover.begin_request()

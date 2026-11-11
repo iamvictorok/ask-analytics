@@ -1,6 +1,6 @@
 {
   "name": "ask-analytics",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Ask questions about DHIS2 aggregate data in plain language; answers come from a self-hosted backend reached through a DHIS2 Route.",
   "license": "BSD-3-Clause",
   "private": true,

@@ -29,6 +29,26 @@ def begin_call_log() -> list:
     return log
 
 
+_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar("llm_deadline", default=None)
+# Below this many seconds left, an LLM call is not started at all.
+_MIN_CALL_SECONDS = 3.0
+
+
+class AnswerBudgetExceeded(TimeoutError):
+    """The per-answer LLM time budget ran out (route mode). Callers fall back."""
+
+
+def set_deadline(seconds: float | None) -> None:
+    """Limit the LLM calls of the current request to `seconds` from now (None = no limit)."""
+    _DEADLINE.set(None if not seconds or seconds <= 0 else time.monotonic() + float(seconds))
+
+
+def remaining_budget() -> float | None:
+    """Seconds left in the current request's LLM budget, or None when unlimited."""
+    deadline = _DEADLINE.get()
+    return None if deadline is None else deadline - time.monotonic()
+
+
 def _record_call(entry: dict) -> None:
     log = _CALL_LOG.get()
     if log is not None:
@@ -86,6 +106,7 @@ async def complete(
     *,
     json_mode: bool = False,
     temperature: float = 0.3,
+    max_seconds: float | None = None,
 ) -> str:
     """Call the configured LLM provider and return the assistant message string.
 
@@ -94,6 +115,8 @@ async def complete(
         settings:    Application settings.
         json_mode:   Request a JSON response object (provider must support it).
         temperature: Sampling temperature; lower = more deterministic.
+        max_seconds: When an answer budget is active (route mode), the most this
+                     call may use, so later steps keep time. Ignored otherwise.
 
     Returns:
         The assistant's response as a string.
@@ -147,69 +170,14 @@ async def complete(
         )
 
         start = time.monotonic()
-        fallbacks = _fallback_models(settings, model)
-        candidates = [model] + fallbacks
-        retries = max(0, int(settings.llm_transient_retries))
-        # Circuit breaker: right after the primary model exhausted its retries
-        # on transient errors (e.g. Gemini 503 "high demand"), go straight to
-        # the fallback for a few minutes, keeping the primary as the last resort
-        # with a single attempt. Saves ~10-20 s of doomed retries per call.
-        breaker_open = bool(fallbacks) and _PRIMARY_DOWN_UNTIL.get(model, 0.0) > time.monotonic()
-        if breaker_open:
-            candidates = fallbacks + [model]
-        last_exc: Exception | None = None
-        live = [c for c in candidates if _PRIMARY_DOWN_UNTIL.get(c, 0.0) <= time.monotonic()]
-        if live and len(live) < len(candidates):
-            # Models marked down go last, with a single attempt.
-            candidates = live + [c for c in candidates if c not in live]
-        for idx, candidate in enumerate(candidates):
-            # Primary gets the full retry budget; each fallback gets one retry.
-            is_primary = candidate == model
-            attempts = 1 + (retries if (is_primary and not breaker_open) else min(retries, 1))
-            if breaker_open and is_primary:
-                attempts = 1
-            for attempt in range(attempts):
-                try:
-                    response = await litellm.acompletion(**{**kwargs, "model": candidate})
-                except Exception as exc:  # noqa: BLE001 - classified below
-                    last_exc = exc
-                    if not _is_transient(exc):
-                        raise
-                    logger.warning(
-                        "llm_call_transient",
-                        extra={"model": candidate, "attempt": attempt + 1, "error": str(exc)[:300]},
-                    )
-                    _record_call({"model": candidate, "attempt": attempt + 1, "transient": True,
-                                  "error": _safe_error(exc), "seconds": round(time.monotonic() - start, 2)})
-                    if _is_quota_exhausted(exc):
-                        # Daily / quota exhaustion: retrying the same model only burns
-                        # more quota and time. Mark it down and move to the next model.
-                        _PRIMARY_DOWN_UNTIL[candidate] = time.monotonic() + _QUOTA_BREAKER_SECONDS
-                        break
-                    if attempt + 1 < attempts:
-                        await asyncio.sleep(settings.llm_retry_backoff_seconds * (2 ** attempt))
-                    elif is_primary and fallbacks:
-                        _PRIMARY_DOWN_UNTIL[model] = time.monotonic() + _BREAKER_SECONDS
-                    continue
-                content = response.choices[0].message.content or ""
-                _PRIMARY_DOWN_UNTIL.pop(candidate, None)
-                _record_call({"model": candidate, "fallback": not is_primary, "breaker": breaker_open, "attempt": attempt + 1,
-                              "seconds": round(time.monotonic() - start, 2), "json": json_mode})
-                logger.info(
-                    "llm_call_ok",
-                    extra={
-                        "provider": settings.llm_provider,
-                        "model": candidate,
-                        "fallback": idx > 0,
-                        "chars": len(content),
-                        "duration_ms": int((time.monotonic() - start) * 1000),
-                    },
-                )
-                return content
-        assert last_exc is not None
-        _record_call({"model": model, "failed": True, "seconds": round(time.monotonic() - start, 2),
-                      "error": type(last_exc).__name__})
-        raise last_exc
+        token = None
+        if max_seconds and remaining_budget() is not None:
+            token = _DEADLINE.set(min(_DEADLINE.get(), start + float(max_seconds)))
+        try:
+            return await _complete_with_fallbacks(litellm, kwargs, model, settings, json_mode, start)
+        finally:
+            if token is not None:
+                _DEADLINE.reset(token)
 
     except Exception as exc:
         logger.error(
@@ -217,6 +185,88 @@ async def complete(
             extra={"error": str(exc), "provider": settings.llm_provider, "model": settings.llm_model},
         )
         raise RuntimeError(f"LLM call failed ({settings.llm_provider}): {exc}") from exc
+
+
+async def _complete_with_fallbacks(litellm, kwargs, model, settings, json_mode, start) -> str:
+    """Try the primary model (with retries), then each fallback, within the answer budget."""
+    fallbacks = _fallback_models(settings, model)
+    candidates = [model] + fallbacks
+    retries = max(0, int(settings.llm_transient_retries))
+    # Circuit breaker: right after the primary model exhausted its retries
+    # on transient errors (e.g. Gemini 503 "high demand"), go straight to
+    # the fallback for a few minutes, keeping the primary as the last resort
+    # with a single attempt. Saves ~10-20 s of doomed retries per call.
+    breaker_open = bool(fallbacks) and _PRIMARY_DOWN_UNTIL.get(model, 0.0) > time.monotonic()
+    if breaker_open:
+        candidates = fallbacks + [model]
+    last_exc: Exception | None = None
+    live = [c for c in candidates if _PRIMARY_DOWN_UNTIL.get(c, 0.0) <= time.monotonic()]
+    if live and len(live) < len(candidates):
+        # Models marked down go last, with a single attempt.
+        candidates = live + [c for c in candidates if c not in live]
+    for idx, candidate in enumerate(candidates):
+        # Primary gets the full retry budget; each fallback gets one retry.
+        is_primary = candidate == model
+        attempts = 1 + (retries if (is_primary and not breaker_open) else min(retries, 1))
+        if breaker_open and is_primary:
+            attempts = 1
+        for attempt in range(attempts):
+            left = remaining_budget()
+            if left is not None and left < _MIN_CALL_SECONDS:
+                _record_call({"model": candidate, "skipped": "answer time budget used up",
+                              "seconds": round(time.monotonic() - start, 2)})
+                raise AnswerBudgetExceeded("answer time budget used up; skipping the LLM step")
+            call_kwargs = {**kwargs, "model": candidate}
+            if left is not None:
+                call_kwargs["timeout"] = max(1.0, min(float(settings.llm_timeout_seconds), left - 1.0))
+            wait_cap = float(call_kwargs["timeout"]) + 2.0
+            if left is not None:
+                wait_cap = min(wait_cap, max(1.0, left - 0.5))
+            try:
+                response = await asyncio.wait_for(litellm.acompletion(**call_kwargs), timeout=wait_cap)
+            except Exception as exc:  # noqa: BLE001 - classified below
+                last_exc = exc
+                if not _is_transient(exc):
+                    raise
+                logger.warning(
+                    "llm_call_transient",
+                    extra={"model": candidate, "attempt": attempt + 1, "error": str(exc)[:300]},
+                )
+                _record_call({"model": candidate, "attempt": attempt + 1, "transient": True,
+                              "error": _safe_error(exc), "seconds": round(time.monotonic() - start, 2)})
+                if _is_quota_exhausted(exc):
+                    # Daily / quota exhaustion: retrying the same model only burns
+                    # more quota and time. Mark it down and move to the next model.
+                    _PRIMARY_DOWN_UNTIL[candidate] = time.monotonic() + _QUOTA_BREAKER_SECONDS
+                    break
+                if attempt + 1 < attempts:
+                    pause = settings.llm_retry_backoff_seconds * (2 ** attempt)
+                    left = remaining_budget()
+                    if left is not None:
+                        pause = max(0.0, min(pause, left - _MIN_CALL_SECONDS))
+                    await asyncio.sleep(pause)
+                elif is_primary and fallbacks:
+                    _PRIMARY_DOWN_UNTIL[model] = time.monotonic() + _BREAKER_SECONDS
+                continue
+            content = response.choices[0].message.content or ""
+            _PRIMARY_DOWN_UNTIL.pop(candidate, None)
+            _record_call({"model": candidate, "fallback": not is_primary, "breaker": breaker_open, "attempt": attempt + 1,
+                          "seconds": round(time.monotonic() - start, 2), "json": json_mode})
+            logger.info(
+                "llm_call_ok",
+                extra={
+                    "provider": settings.llm_provider,
+                    "model": candidate,
+                    "fallback": idx > 0,
+                    "chars": len(content),
+                    "duration_ms": int((time.monotonic() - start) * 1000),
+                },
+            )
+            return content
+    assert last_exc is not None
+    _record_call({"model": model, "failed": True, "seconds": round(time.monotonic() - start, 2),
+                  "error": type(last_exc).__name__})
+    raise last_exc
 
 
 async def embed(text: str, settings: Settings) -> list[float]:

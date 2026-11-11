@@ -24,7 +24,7 @@ def _identity():
 @pytest.fixture(autouse=True)
 def mock_llm_complete():
     with patch("backend.app.llm.complete", new_callable=AsyncMock) as mock:
-        async def side_effect(messages, settings, json_mode=False, temperature=0.3):
+        async def side_effect(messages, settings, json_mode=False, temperature=0.3, **_kw):
             if json_mode:
                 user_msg = messages[-1]["content"]
                 output_mode = "conversational"

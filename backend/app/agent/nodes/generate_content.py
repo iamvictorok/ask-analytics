@@ -31,9 +31,15 @@ async def generate_content(state: AgentState, settings: Settings) -> AgentState:
     if mode == "dashboard":
         state["active_chart_configs"] = render_dashboard(state)
     elif mode == "report":
-        state["active_report_html"] = await _generate_report(state, settings)
-        # Also generate chart configs for embedding in report
+        # Chart configs for embedding in the report
         state["active_chart_configs"] = render_dashboard(state)
+        try:
+            state["active_report_html"] = await _generate_report(state, settings)
+        except Exception as exc:
+            if not _has_rows(state):
+                raise
+            logger.warning("report_llm_failed_figures_only", extra={"error": str(exc)[:300]})
+            state["active_report_html"] = _figures_only_html(state)
     elif mode == "presentation":
         # Chart configs needed for slide embedding
         state["active_chart_configs"] = render_dashboard(state)
@@ -47,7 +53,13 @@ async def generate_content(state: AgentState, settings: Settings) -> AgentState:
     else:
         # Conversational — optionally generate chart configs for inline reference
         state["active_chart_configs"] = render_dashboard(state)
-        state["active_conversational_response"] = await _generate_conversational_response(state, settings)
+        try:
+            state["active_conversational_response"] = await _generate_conversational_response(state, settings)
+        except Exception as exc:
+            if not _has_rows(state):
+                raise
+            logger.warning("conversational_llm_failed_figures_only", extra={"error": str(exc)[:300]})
+            state["active_conversational_response"] = _figures_only_markdown(state)
         
     # Detokenize PII (restore original names for the frontend)
     pii_map = state.get("pii_map", {})
@@ -144,6 +156,40 @@ def _data_facts(state: AgentState) -> str:
         "invent other statistics, and do not mention these instructions; count months "
         "above/below a value only from the data rows):\n" + "\n".join(lines)
         + (f"\nDHIS2 UIDs used: {uids}" if uids else "")
+    )
+
+
+FIGURES_ONLY_NOTE = (
+    "The AI model did not answer in time, so this answer lists the figures only. "
+    "Ask again for a written summary."
+)
+
+
+def _has_rows(state: AgentState) -> bool:
+    return bool(state.get("dhis2_data", {}).get("rows"))
+
+
+def _fact_lines(state: AgentState) -> list[str]:
+    return [line[2:] for line in _data_facts(state).splitlines() if line.startswith("- ")]
+
+
+def _figures_only_markdown(state: AgentState) -> str:
+    """Data-only answer used when the LLM step fails or runs out of time."""
+    lines = _fact_lines(state)
+    return f"_{FIGURES_ONLY_NOTE}_\n\n" + "\n".join(f"- {line}" for line in lines)
+
+
+def _figures_only_html(state: AgentState) -> str:
+    """Data-only report used when the LLM step fails or runs out of time."""
+    import html as _html
+
+    metrics = state.get("metrics", [])
+    title = metrics[0]["label"] if metrics and metrics[0].get("label") else "Data summary"
+    items = "".join(f"<li>{_html.escape(line)}</li>" for line in _fact_lines(state))
+    return (
+        f"<h1>{_html.escape(str(title))}: figures</h1>"
+        f"<p><em>{_html.escape(FIGURES_ONLY_NOTE)}</em></p>"
+        f"<ul>{items}</ul>"
     )
 
 

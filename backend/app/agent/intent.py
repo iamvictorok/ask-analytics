@@ -461,6 +461,7 @@ Web enrichment: true for WHO guidelines, benchmarks, outbreak context, policy, e
             settings,
             json_mode=True,
             temperature=0.1,
+            max_seconds=20,
         )
     except Exception as exc:
         logger.warning("llm_intent_complete_failed", extra={"error": str(exc)})

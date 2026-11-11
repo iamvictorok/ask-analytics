@@ -409,7 +409,8 @@ async def llm_judge(question: str, label: str, cands: list[dict], place: str, pe
     prompt = JUDGE_PROMPT.format(context=ctx, question=question[:500], label=label[:120],
                                  candidates=_fmt_candidates(cands), place=place, period=period)
     try:
-        raw = await complete([{"role": "user", "content": prompt}], settings, json_mode=True, temperature=0.0)
+        raw = await complete([{"role": "user", "content": prompt}], settings, json_mode=True, temperature=0.0,
+                             max_seconds=10)
         m = re.search(r"\{.*\}", raw or "", flags=re.S)
         parsed = json.loads(m.group(0) if m else raw)
     except Exception as exc:

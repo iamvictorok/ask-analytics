@@ -101,6 +101,7 @@ Or with Postgres/Redis: `docker compose up -d` (uses the same `.env`).
 | `LLM_API_KEY` | hosted models | API key for a hosted model. |
 | `LLM_BASE_URL` | self-hosted | Ollama / OpenAI-compatible endpoint. |
 | `LLM_TIMEOUT_SECONDS` | no | Per model call. One answer makes 2–3 calls, so a fast model matters more than this value: the whole answer must finish inside the Route timeout (max 60 s). |
+| `ANSWER_TIME_BUDGET_SECONDS` | no | Time one answer may spend on AI model calls. `0` (default) = 45 s in route mode, so answers finish inside the 60 s Route timeout. When it runs out the answer falls back to the keyword classifier and a figures-only text instead of a 504. |
 | `TAVILY_API_KEY` | no | Optional web search for context. Leave empty to keep everything inside DHIS2 + your model. |
 | `DATABASE_URL` | no | Conversation history store. SQLite by default; Postgres supported. |
 | `DHIS2_SNAPSHOT_MODE` | no | Keep `off` (default). The bundled snapshot is public demo data. |

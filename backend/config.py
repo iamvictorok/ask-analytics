@@ -79,6 +79,14 @@ class Settings(SettingsBase):
     llm_fallback_models: str = ""
     llm_transient_retries: int = 2
     llm_retry_backoff_seconds: float = 2.0
+    # Whole-answer time budget (seconds) for the LLM calls of one chat request.
+    # A DHIS2 Route cuts the response at its timeout (max 60 s) and buffers
+    # it, so in route mode every answer must finish before that. When the
+    # budget runs out, remaining LLM steps are skipped (keyword intent
+    # classifier, data-only answer) instead of the Route returning a 504.
+    # 0 = auto: 45 s in route/combined-with-route mode, unlimited otherwise.
+    # Negative = always unlimited.
+    answer_time_budget_seconds: float = 0.0
 
     # Embedding model
     embedding_provider: str = "mock"    # mock | openai | cohere | ollama
@@ -163,6 +171,15 @@ class Settings(SettingsBase):
         if self.deployment_mode == "route":
             return True
         return self.deployment_mode == "combined" and bool(self.route_shared_key)
+
+    @property
+    def effective_answer_budget(self) -> float | None:
+        """Seconds one chat answer may spend on LLM calls, or None (no limit)."""
+        if self.answer_time_budget_seconds < 0:
+            return None
+        if self.answer_time_budget_seconds > 0:
+            return float(self.answer_time_budget_seconds)
+        return 45.0 if self.route_mode_enabled else None
 
     @property
     def is_hosted(self) -> bool:

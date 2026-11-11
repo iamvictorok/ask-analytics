@@ -61,7 +61,7 @@ const Message = ({ msg, loading, client, onError }) => {
                 {html ? (
                     <Html html={html} className={styles.markdown} />
                 ) : loading ? (
-                    <span className={styles.typing}>Working on it…</span>
+                    <span className={styles.typing}>Working on it… answers can take up to a minute.</span>
                 ) : null}
             </div>
 

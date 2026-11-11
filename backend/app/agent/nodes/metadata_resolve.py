@@ -821,6 +821,7 @@ If NONE of the candidates are relevant, return: {{"index": 0, "reasoning": "no m
                 settings,
                 json_mode=True,
                 temperature=0.0,
+                max_seconds=10,
             )
             parsed = json.loads(raw)
             idx = int(parsed.get("index", 0))
