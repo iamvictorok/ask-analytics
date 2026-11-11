@@ -1,0 +1,7 @@
+[
+  {"id": "anc1", "label": "ANC 1 Coverage · last 12 months", "question": "Show me ANC 1 Coverage for the last 12 months", "output_mode": "dashboard"},
+  {"id": "penta3", "label": "Penta 3 coverage by sub-unit · last year", "question": "Show Penta 3 coverage for each sub-unit for last year", "output_mode": "dashboard"},
+  {"id": "malaria", "label": "Malaria cases trend · 12 months", "question": "Show me the trend of confirmed malaria cases for the last 12 months", "output_mode": "dashboard"},
+  {"id": "report", "label": "Programme review report · ANC", "question": "Write a programme review report on ANC 1 Coverage for the last 12 months", "output_mode": "report"},
+  {"id": "export", "label": "Export ANC 1 by sub-unit to Excel", "question": "Export ANC 1 Coverage by sub-unit for the last 12 months to Excel", "output_mode": "export"}
+]

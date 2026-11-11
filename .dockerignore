@@ -1,0 +1,53 @@
+# Version control
+.git/
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+
+# Node modules (not needed in container)
+node_modules/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment & secrets
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker (avoid recursive context)
+docker-compose.yml
+Dockerfile
+
+# Documentation
+*.md
+
+# Build outputs / local state (rebuilt inside the image)
+**/node_modules/
+**/__pycache__/
+*.db
+*.db-shm
+*.db-wal
+.env.*
+
+# The DHIS2 app is built and installed separately
+dhis2-app/
+docs/

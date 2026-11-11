@@ -1,0 +1,38 @@
+# Optional Render Blueprint: the backend in route mode on one web service.
+# Values marked `sync: false` are entered in the Render dashboard; never commit them.
+services:
+  - type: web
+    name: ask-analytics-backend
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: DEPLOYMENT_MODE
+        value: route
+      - key: ROUTE_SHARED_KEY          # same value as the Route's X-Route-Key header
+        generateValue: true
+      - key: DHIS2_BASE_URL            # your DHIS2 server
+        sync: false
+      - key: DHIS2_PAT                 # token of a read-only DHIS2 account
+        sync: false
+      - key: DHIS2_SNAPSHOT_MODE
+        value: "off"
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: LLM_MODEL
+        value: gemini/gemini-flash-latest
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_TIMEOUT_SECONDS
+        value: "40"
+      - key: EMBEDDING_PROVIDER
+        value: mock
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      - key: DATABASE_URL              # free plan disk is ephemeral
+        value: sqlite+aiosqlite:////tmp/ask_analytics.db
+      - key: TEMP_FILE_DIR
+        value: /tmp/ask_analytics

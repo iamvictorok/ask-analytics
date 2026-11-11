@@ -1,0 +1,24 @@
+{
+  "name": "ask-analytics",
+  "version": "0.1.0",
+  "description": "Ask questions about DHIS2 aggregate data in plain language; answers come from a self-hosted backend reached through a DHIS2 Route.",
+  "license": "BSD-3-Clause",
+  "private": true,
+  "scripts": {
+    "build": "d2-app-scripts build",
+    "start": "d2-app-scripts start",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@dhis2/cli-app-scripts": "^12.11.8"
+  },
+  "dependencies": {
+    "@dhis2/app-runtime": "^3.17.6",
+    "@dhis2/ui": "^10.20.0",
+    "marked": "^18.0.5",
+    "plotly.js-dist-min": "^3.7.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "prop-types": "^15.8.1"
+  }
+}

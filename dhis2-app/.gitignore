@@ -1,0 +1,7 @@
+node_modules/
+build/
+.d2/
+src/locales/
+*.log
+.env
+.env.*
